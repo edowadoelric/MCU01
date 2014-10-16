@@ -187,8 +187,8 @@ void vUart_AnalysisMessage(void *pvParameters)
           
           Com1RxMsg.Length =            Com1RxPointer->Length;
           Com1RxMsg.Command =           Com1RxPointer->Command;
-          Com1RxMsg.MoterLeftPwm =      Com1RxPointer->MoterLeftPwm;
-          Com1RxMsg.MoterRightPwm =     Com1RxPointer->MoterRightPwm;
+          Com1RxMsg.MotorLeftPwm =      Com1RxPointer->MotorLeftPwm;
+          Com1RxMsg.MotorRightPwm =     Com1RxPointer->MotorRightPwm;
           Com1RxMsg.Distance =          Com1RxPointer->Distance;
           Com1RxMsg.Angle =             Com1RxPointer->Angle;
           

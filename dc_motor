@@ -1,0 +1,190 @@
+#include "global.h"
+
+/*----function define---------------------------------------------------------*/
+//void vDcMotor_Init(void);
+void Motor1_stop(void);
+void Motor2_stop(void);
+void uMotor1_CW(uint8_t M1_Value);
+void uMotor2_CW(uint8_t M2_Value);
+void uMotor1_CCW(uint8_t M1_Value);
+void uMotor2_CCW(uint8_t M2_Value);
+
+/*----Queue Handle------------------------------------------------------------*/
+
+/*----Task--------------------------------------------------------------------*/
+void vDcMotor_Control(void *pvParameters);
+
+/*----private variables-------------------------------------------------------*/
+
+/* Private define ------------------------------------------------------------*/
+#define LV1 (uint8_t)20         //デューティ比レベル1
+#define LV2 (uint8_t)50         //デューティ比レベル2
+#define LV3 (uint8_t)60         //デューティ比レベル3
+
+uint8_t test;
+
+/*---- DcMotor用設定関数------------------------------------------------------*/
+void vDcMotor_Init(void){
+    
+    GPIO_InitTypeDef GPIO_InitStructure;
+    TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+    TIM_OCInitTypeDef  TIM_OCInitStructure;
+
+    /* Enable TIM4 clock */
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+
+    /* Enable GPIOA, GPIOB,clocks*/ 
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA 
+                         | RCC_APB2Periph_GPIOB 
+                         , ENABLE);
+
+    /* Configure Motor GPIO (PA7=I/O1, PA6=I/O2, PA5=I/O3, PA4=I/O4)*/
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_7;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    /* GPIO Configuration:TIM4 Channel1-4 as alternate function push-pull */
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7 | GPIO_Pin_8 | GPIO_Pin_9;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    
+    /* ---------------------------------------------------------------------------
+    TIM3 Configuration: Output Compare Toggle Mode:
+    TIM3CLK = 36 MHz, Prescaler = 99*72=720, TIM3 counter clock = 1kHz
+    ----------------------------------------------------------------------------*/
+
+    /* Time base configuration */
+    TIM_TimeBaseStructure.TIM_Period = 99;
+    TIM_TimeBaseStructure.TIM_Prescaler = 71;
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
+    TIM_TimeBaseInit(TIM4, &TIM_TimeBaseStructure);
+
+    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+
+    /* Output Compare Toggle Mode configuration: Channel1 */
+    TIM_OCInitStructure.TIM_Pulse = 0;
+    TIM_OC1Init(TIM4, &TIM_OCInitStructure);
+    TIM_OC1PreloadConfig(TIM4, TIM_OCPreload_Disable);
+
+    /* Output Compare Toggle Mode configuration: Channel2 */
+    TIM_OCInitStructure.TIM_Pulse = 0;
+    TIM_OC2Init(TIM4, &TIM_OCInitStructure);
+    TIM_OC2PreloadConfig(TIM4, TIM_OCPreload_Disable);
+
+    /* Output Compare Toggle Mode configuration: Channel3 */
+    TIM_OCInitStructure.TIM_Pulse = 0;
+    TIM_OC3Init(TIM4, &TIM_OCInitStructure);
+    TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Disable);
+
+    /* Output Compare Toggle Mode configuration: Channel4 */
+    TIM_OCInitStructure.TIM_Pulse = 0;
+    TIM_OC4Init(TIM4, &TIM_OCInitStructure);
+    TIM_OC4PreloadConfig(TIM4, TIM_OCPreload_Disable);
+
+    /* TIM enable counter */
+    TIM_Cmd(TIM4, ENABLE);
+
+    /*タスク生成*/
+    xTaskCreate( vDcMotor_Control, "DcMotor_Task1", 128, NULL, 1, NULL);
+
+}  
+
+
+/* Motor stop-----------------------------------------------------------------*/
+void Motor1_stop(void){
+    GPIO_ResetBits(GPIOA, GPIO_Pin_7);
+    TIM_SetCompare1(TIM4,0);
+}
+
+void Motor2_stop(void){           
+    GPIO_ResetBits(GPIOA, GPIO_Pin_5);
+    TIM_SetCompare3(TIM4,0);
+}
+
+/* Motor1 CW------------------------------------------------------------------*/
+/* 値の指定はMax100まで*/
+void Motor1_CW(uint8_t M1_Value){
+    GPIO_SetBits(GPIOA, GPIO_Pin_7);
+    TIM_SetCompare1(TIM4,M1_Value*10);    //100%を約1023になおす    
+}
+
+/* Motor2 CW------------------------------------------------------------------*/
+void Motor2_CW(uint8_t M2_Value){
+    GPIO_SetBits(GPIOA, GPIO_Pin_5);
+    TIM_SetCompare3(TIM4,M2_Value*10);
+}
+
+/* Motor1 CCW------------------------------------------------------------------*/
+void Motor1_CCW(uint8_t M1_Value){
+    GPIO_ResetBits(GPIOA, GPIO_Pin_7);
+    TIM_SetCompare1(TIM4,M1_Value*10);
+}
+
+/* Motor2 CCW-----------------------------------------------------------------*/
+void Motor2_CCW(uint8_t M2_Value){  
+    GPIO_ResetBits(GPIOA, GPIO_Pin_5);
+    TIM_SetCompare3(TIM4,M2_Value*10);
+}
+
+/*-----ここからタスク---------------------------------------------------------*/
+
+/* PCから受信したパラメータをメモリに格納 ------------------------------------*/
+void vDcMotor_Control(void *pvParameters){ 
+    
+    //初期設定として、モータを停止させておく
+    float RightPwm = 0;        //右モータのPWM値
+    float LeftPwm = 0;         //左モータのPWM値
+
+    int testcount1 =0;
+    int testcount2 =0;
+
+    while(1) {  
+        
+        /*
+        //Motor1
+        RightPwm = RightPwm + ((float)Com1RxMsg.MotorRightPwm - RightPwm) * 0.3;
+
+        if(RightPwm > 3){   //入力PWMが1以上なら
+            Motor1_CW((uint8_t)RightPwm);
+        }
+        else if(RightPwm < -3){
+            Motor1_CCW((uint8_t)RightPwm);
+        }
+        else{
+            Motor1_Stop();
+        }
+
+        // Motor2
+        LeftPwm = LeftPwm + ((float)Com1RxMsg.MotorLeftPwm - LeftPwm) * 0.3;
+
+        if(LeftPwm > 3){   //入力PWMが1以上なら
+            Motor2_CW((uint8_t)LeftPwm);
+        }
+        else if(LeftPwm < -3){
+            Motor2_CCW((uint8_t)LeftPwm);
+        }
+        else{
+            Motor2_Stop();
+        }
+
+        //testcount1++;
+        //testcount2--;
+
+        Com1TxMsg.CompleteFlag = testcount1;
+        //Com1TxMsg.EncoderLeft = testcount2;
+        //Com1TxMsg.EncoderRight = testcount1;
+        */
+        
+        Motor1_CW(100);
+        Motor2_CW(100);
+        
+        vTaskDelay(5000);
+
+    }
+  
+}

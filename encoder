@@ -1,0 +1,80 @@
+#include "global.h"
+
+/*----function define---------------------------------------------------------*/
+//void vEncoder_Init(void);
+
+/*----Queue Handle------------------------------------------------------------*/
+
+/*----Task--------------------------------------------------------------------*/
+void vEncoder_Read(void *pvParameters);
+
+/*----private variables-------------------------------------------------------*/
+//uint16_t LeftAngle=0;
+//uint16_t RightAngle=0;
+
+
+//エンコーダ使用のための初期化
+void vEncoder_Init(void){ 
+  
+  GPIO_InitTypeDef GPIO_InitStructure;
+  TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+
+  //Supply APB1 Clock
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2 | RCC_APB1Periph_TIM3 , ENABLE);
+  /* Supply APB2 clock */
+
+  //TIM3のピンをリマップする
+  GPIO_PinRemapConfig(GPIO_PartialRemap_TIM3,ENABLE);
+  
+  /* TIM3_Ch1,2のGPIO設定 */
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+  GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+  /* TIM4_Ch1,2のGPIO設定 */
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+  GPIO_Init(GPIOA, &GPIO_InitStructure);
+  
+  //TIM2,3のエンコーダインターフェース設定
+
+  /* TIM3 */
+  TIM_TimeBaseStructure.TIM_Period = 65535;     //カウンタの最大値
+  TIM_TimeBaseStructure.TIM_Prescaler = 0;
+  TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+  TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
+  TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+  TIM_EncoderInterfaceConfig (TIM3, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+
+  /* TIM2 */
+  TIM_TimeBaseStructure.TIM_Period = 65535;
+  TIM_TimeBaseStructure.TIM_Prescaler = 0;
+  TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+  TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
+  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+  TIM_EncoderInterfaceConfig (TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+
+  /* TIMを起動 */
+  TIM_Cmd(TIM2, ENABLE);
+  TIM_Cmd(TIM3, ENABLE);
+  
+  /*タスク生成*/
+  xTaskCreate( vEncoder_Read, "Encoder_Task1", 128, NULL, 1, NULL);
+}
+
+//エンコーダの値を読み取るタスク
+void vEncoder_Read(void *pvParameters){
+    
+    while(1){
+        LeftAngle=TIM2->CNT;
+        RightAngle=TIM3->CNT;
+        
+        Com1TxMsg.EncoderLeft=LeftAngle;
+        Com1TxMsg.EncoderRight=RightAngle;
+        
+        vTaskDelay(100);
+    }
+}
+        
